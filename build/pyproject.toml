@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "database"
+version = "1.0"
+description = "Пакет для отправки Python-объектов в БД под управлением различных движков"
+requires-python = ">=3.11"
+dependencies = [
+    "inflect==7.3.1",
+    "lmdb==1.5.1"
+]
+authors = [
+  {name = "Андрей Павлов", email = "postusername@duck.com"}
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
