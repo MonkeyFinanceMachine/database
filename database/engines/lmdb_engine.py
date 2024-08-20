@@ -1,7 +1,7 @@
 from copy import deepcopy
-import shutil
-import multiprocessing as mp
+from multiprocessing import cpu_count
 from pickle import dumps, loads
+import shutil
 
 import lmdb
 
@@ -49,7 +49,7 @@ class LMDBEngine(BaseEngine):
         super().__init__(path)
 
         if threads_count == -1:
-            self.threads_count = mp.cpu_count()
+            self.threads_count = cpu_count()
         elif threads_count <= 0:
             raise ValueError('"threads_count" must be greater than zero or -1 to use all CPU cores!')
         else:
