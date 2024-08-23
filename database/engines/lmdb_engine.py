@@ -16,7 +16,7 @@ class LMDBTable(Table):
                        conditions: dict[str, object] | None = None) -> list[dict]:
         data = loads(row_data)
         if self.key is not None:
-            data[self.key] = row_key
+            data[self.key] = row_key.decode()
 
         if conditions is not None:
             for key in conditions:
@@ -29,13 +29,13 @@ class LMDBTable(Table):
     def make_db_row(self,
                     row_data: dict) -> tuple:
         if self.key is not None:
-            key = row_data[self.key]
+            key = str(row_data[self.key]).encode()
             del row_data[key]
         else:
-            key = crc64(row_data)
+            key = crc64(row_data).to_bytes(8)
 
         value = dumps(row_data)
-        return (str(key).encode(), value)
+        return (key, value)
 
 
 class LMDBEngine(BaseEngine):
@@ -89,13 +89,9 @@ class LMDBEngine(BaseEngine):
 
         self._lmdb_copy_tmp()
 
-        self.environment = self._lmdb_open(self.path)
         self.tables[new_name] = deepcopy(self.tables[old_name])
         del self.tables[old_name]
-        for table_name in self.tables:
-            self._lmdb_get_db_descriptor(self.environment,
-                                         self.tables[table_name],
-                                         table_name)
+        self._lmdb_sync()
 
     # TODO: сейчас экстенсивно копируем все таблицы, кроме удаляемой, надо побыстрее
     def delete_table(self, name: str) -> None:
@@ -116,12 +112,8 @@ class LMDBEngine(BaseEngine):
 
         self._lmdb_copy_tmp()
 
-        self.environment = self._lmdb_open(self.path)
         del self.tables[name]
-        for table_name in self.tables:
-            self._lmdb_get_db_descriptor(self.environment,
-                                         self.tables[table_name],
-                                         table_name)
+        self._lmdb_sync()
 
     async def select(self,
                      table_name: str,
@@ -136,7 +128,7 @@ class LMDBEngine(BaseEngine):
         else:
             with self.environment.begin(db=self.db_descriptors[table_name]) as txn:
                 for key, value in txn.cursor():
-                    row = table.process_db_row(value, key.decode(), conditions)
+                    row = table.process_db_row(value, key, conditions)
                     result += row
         return result
 
@@ -160,8 +152,8 @@ class LMDBEngine(BaseEngine):
             with self.environment.begin(write=True, db=self.db_descriptors[table_name]) as txn:
                 keys_for_delete = []
                 for key, value in txn.cursor():
-                    row = table.process_db_row(value, key.decode(), conditions=row_data)
-                    if not row:
+                    row = table.process_db_row(value, key, conditions=row_data)
+                    if row:
                         keys_for_delete.append(key)
                 for key in keys_for_delete:
                     txn.delete(key)
@@ -183,6 +175,13 @@ class LMDBEngine(BaseEngine):
                                 table_name: str) -> None:
         self.db_descriptors[table_name] = env.open_db(table_name.encode(),
                                                       integerkey=table.key is None)
+
+    def _lmdb_sync(self) -> None:
+        self.environment = self._lmdb_open(self.path)
+        for table_name in self.tables:
+            self._lmdb_get_db_descriptor(self.environment,
+                                         self.tables[table_name],
+                                         table_name)
 
     def _lmdb_create_tmp(self) -> lmdb.Environment:
         shutil.rmtree("/tmp/lmdb-copy", ignore_errors=True)
